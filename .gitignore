@@ -1,0 +1,82 @@
+# Git忽略文件
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# 环境变量
+.env
+.env.local
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+data/db/*.db
+
+# 美团TRD数据集（所有文件）
+Meituan_TRD/
+
+# 向量数据库
+data/vector_db/
+
+# 模型文件
+*.pkl
+*.pth
+*.pt
+*.h5
+*.npy
+backend/models/*.pkl
+backend/models/*.npy
+
+# 日志
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# 处理后的数据
+data/processed/*.csv
+data/processed/*.parquet
+
+# 缓存
+.cache/
+*.cache
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/

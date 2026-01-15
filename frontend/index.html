@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美团外卖推荐与运营分析平台</title>
+    <link rel="stylesheet" href="static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="container">
+                <h1 class="logo">🍔 美团外卖智能推荐平台</h1>
+                <nav class="nav">
+                    <button @click="currentView = 'recommend'" :class="{active: currentView === 'recommend'}">
+                        智能推荐
+                    </button>
+                    <button @click="currentView = 'search'" :class="{active: currentView === 'search'}">
+                        智能搜索
+                    </button>
+                    <button @click="currentView = 'operation'" :class="{active: currentView === 'operation'}">
+                        运营分析
+                    </button>
+                    <button @click="currentView = 'stats'" :class="{active: currentView === 'stats'}">
+                        平台统计
+                    </button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 智能推荐模块 -->
+            <div v-if="currentView === 'recommend'" class="module">
+                <h2>🎯 智能推荐系统</h2>
+                <div class="card">
+                    <div class="form-group">
+                        <label>用户ID:</label>
+                        <input v-model.number="recommendForm.user_id" type="number" placeholder="请输入用户ID">
+                    </div>
+                    <div class="form-group">
+                        <label>推荐类型:</label>
+                        <select v-model="recommendForm.rec_type">
+                            <option value="poi">推荐商家</option>
+                            <option value="spu">推荐菜品</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>推荐数量:</label>
+                        <input v-model.number="recommendForm.top_k" type="number" min="1" max="20">
+                    </div>
+                    <button @click="getRecommendations" class="btn-primary" :disabled="loading">
+                        {{ loading ? '加载中...' : '获取推荐' }}
+                    </button>
+                </div>
+
+                <!-- 推荐结果 -->
+                <div v-if="recommendations.length > 0" class="results">
+                    <h3>推荐结果 ({{ recommendations.length }}个)</h3>
+                    <div class="result-grid">
+                        <div v-for="(item, index) in recommendations" :key="index" class="result-card">
+                            <div class="rank">Top {{ index + 1 }}</div>
+                            <div class="result-content">
+                                <h4>{{ item.wm_poi_name || item.wm_food_spu_name }}</h4>
+                                <div v-if="item.poi_score" class="score">
+                                    ⭐ 评分: {{ item.poi_score.toFixed(2) }}
+                                </div>
+                                <div v-if="item.price" class="price">
+                                    💰 价格: ¥{{ item.price }}
+                                </div>
+                                <div v-if="item.popularity" class="popularity">
+                                    🔥 热度: {{ item.popularity }}单
+                                </div>
+                                <div v-if="item.reason" class="reason">
+                                    💡 {{ item.reason }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 智能搜索模块 -->
+            <div v-if="currentView === 'search'" class="module">
+                <h2>🔍 智能搜索</h2>
+                <div class="card">
+                    <div class="form-group">
+                        <label>搜索查询:</label>
+                        <input v-model="searchForm.query" 
+                               type="text" 
+                               placeholder="例如: 附近评分高的川菜馆"
+                               @keyup.enter="searchPois">
+                    </div>
+                    <div class="form-group">
+                        <label>商圈:</label>
+                        <select v-model="searchForm.location">
+                            <option value="">全部</option>
+                            <option v-for="i in 11" :key="i" :value="i-1">商圈 {{ i-1 }}</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>排序方式:</label>
+                        <select v-model="searchForm.sort_by">
+                            <option value="rating">按评分</option>
+                            <option value="popularity">按人气</option>
+                        </select>
+                    </div>
+                    <button @click="searchPois" class="btn-primary" :disabled="loading">
+                        {{ loading ? '搜索中...' : '搜索' }}
+                    </button>
+                </div>
+
+                <!-- 搜索结果 -->
+                <div v-if="searchResults.length > 0" class="results">
+                    <h3>搜索结果 ({{ searchResults.length }}个)</h3>
+                    <div v-if="searchIntent" class="intent-box">
+                        <strong>识别意图:</strong> {{ searchIntent }}
+                    </div>
+                    <div class="result-list">
+                        <div v-for="(poi, index) in searchResults" :key="index" class="result-item">
+                            <div class="item-header">
+                                <h4>{{ poi.wm_poi_name }}</h4>
+                                <span class="badge">商圈 {{ poi.aor_id }}</span>
+                            </div>
+                            <div class="item-stats">
+                                <span>⭐ {{ poi.poi_score }}</span>
+                                <span>🚚 {{ poi.delivery_comment_avg_score }}</span>
+                                <span>🍜 {{ poi.food_comment_avg_score }}</span>
+                                <span>📦 {{ poi.order_count }}单</span>
+                            </div>
+                            <button @click="viewPoiDetail(poi.wm_poi_id)" class="btn-small">查看详情</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 运营分析模块 -->
+            <div v-if="currentView === 'operation'" class="module">
+                <h2>📊 商家运营分析</h2>
+                <div class="card">
+                    <div class="form-group">
+                        <label>商家ID:</label>
+                        <input v-model.number="operationForm.poi_id" type="number" placeholder="请输入商家ID">
+                    </div>
+                    <button @click="getOperationAnalysis" class="btn-primary" :disabled="loading">
+                        {{ loading ? '分析中...' : '获取运营分析' }}
+                    </button>
+                </div>
+
+                <!-- 商家详情 -->
+                <div v-if="poiDetail" class="card">
+                    <h3>商家信息</h3>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <label>商家名称:</label>
+                            <span>{{ poiDetail.wm_poi_name }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>综合评分:</label>
+                            <span>⭐ {{ poiDetail.poi_score }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>总订单数:</label>
+                            <span>{{ poiDetail.total_orders }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>客户数:</label>
+                            <span>{{ poiDetail.unique_customers }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI运营建议 -->
+                <div v-if="operationAdvice" class="card advice-card">
+                    <h3>🤖 AI运营建议</h3>
+                    <div class="advice-content">
+                        {{ operationAdvice }}
+                    </div>
+                </div>
+
+                <!-- 智能问答 -->
+                <div v-if="poiDetail" class="card">
+                    <h3>💬 智能问答</h3>
+                    <div class="form-group">
+                        <input v-model="qaQuestion" 
+                               type="text" 
+                               placeholder="例如: 如何提升午餐订单量？"
+                               @keyup.enter="askQuestion">
+                        <button @click="askQuestion" class="btn-primary" :disabled="loading">提问</button>
+                    </div>
+                    <div v-if="qaAnswer" class="answer-box">
+                        <strong>回答:</strong>
+                        <p>{{ qaAnswer }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 平台统计模块 -->
+            <div v-if="currentView === 'stats'" class="module">
+                <h2>📈 平台统计</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-number">{{ stats.users?.toLocaleString() || 0 }}</div>
+                        <div class="stat-label">注册用户</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🏪</div>
+                        <div class="stat-number">{{ stats.pois?.toLocaleString() || 0 }}</div>
+                        <div class="stat-label">合作商家</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🍜</div>
+                        <div class="stat-number">{{ stats.spus?.toLocaleString() || 0 }}</div>
+                        <div class="stat-label">菜品数量</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-number">{{ stats.orders?.toLocaleString() || 0 }}</div>
+                        <div class="stat-label">总订单数</div>
+                    </div>
+                </div>
+                <button @click="loadStats" class="btn-primary">刷新统计</button>
+            </div>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <p>美团外卖推荐与运营分析平台 v1.0 | 基于大模型的智能推荐系统</p>
+        </footer>
+    </div>
+
+    <script src="static/js/app.js"></script>
+</body>
+</html>

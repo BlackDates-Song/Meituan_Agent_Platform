@@ -1,0 +1,53 @@
+# 美团外卖推荐与分析平台 - Python依赖
+
+# 核心数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# 数据库
+sqlite3  # Python内置
+
+# 机器学习
+scikit-learn>=1.3.0
+
+# 图神经网络
+dgl>=1.1.0
+torch>=2.0.0
+
+# 大模型API
+openai>=1.0.0
+dashscope>=1.14.0  # 阿里通义千问
+
+# Web框架
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
+
+# 向量数据库（第三阶段）
+chromadb>=0.4.0
+httpx>=0.25.0
+
+# 工具库
+python-dotenv>=1.0.0
+tqdm>=4.65.0
+
+# 数据可视化
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.17.0
+
+# 工具库
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+requests>=2.31.0
+
+# Jupyter（用于探索性分析）
+jupyter>=1.0.0
+ipykernel>=6.25.0
+
+# 开发工具
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.1.0

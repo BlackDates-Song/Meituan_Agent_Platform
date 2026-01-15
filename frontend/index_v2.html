@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美团外卖推荐与运营分析平台 V2</title>
+    <link rel="stylesheet" href="static/css/style_v2.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="container">
+                <h1 class="logo">🍔 美团外卖智能平台 V2</h1>
+                <div class="version-badge">第三阶段增强版</div>
+                <nav class="nav">
+                    <button @click="currentView = 'recommend'" :class="{active: currentView === 'recommend'}">
+                        智能推荐
+                    </button>
+                    <button @click="currentView = 'rag'" :class="{active: currentView === 'rag'}">
+                        RAG搜索 <span class="badge">NEW</span>
+                    </button>
+                    <button @click="currentView = 'operation'" :class="{active: currentView === 'operation'}">
+                        运营分析 <span class="badge">Agent</span>
+                    </button>
+                    <button @click="currentView = 'comment'" :class="{active: currentView === 'comment'}">
+                        评论摘要 <span class="badge">NEW</span>
+                    </button>
+                    <button @click="currentView = 'qa'" :class="{active: currentView === 'qa'}">
+                        智能问答 <span class="badge">RAG</span>
+                    </button>
+                    <button @click="currentView = 'stats'" :class="{active: currentView === 'stats'}">
+                        平台统计
+                    </button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 智能推荐模块 -->
+            <div v-if="currentView === 'recommend'" class="module fade-in">
+                <div class="module-header">
+                    <h2>🎯 智能推荐系统</h2>
+                    <p class="module-desc">基于协同过滤 + 图嵌入的个性化推荐</p>
+                </div>
+                
+                <div class="card">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>用户ID:</label>
+                            <input v-model="recommendForm.user_id" type="text" placeholder="输入用户ID">
+                        </div>
+                        <div class="form-group">
+                            <label>推荐数量:</label>
+                            <input v-model.number="recommendForm.top_k" type="number" min="1" max="20">
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input v-model="recommendForm.use_llm" type="checkbox">
+                                使用LLM生成推荐理由
+                            </label>
+                        </div>
+                    </div>
+                    <button @click="getRecommendations" class="btn-primary" :disabled="loading">
+                        <span v-if="!loading">🔍 获取推荐</span>
+                        <span v-else class="loading-spinner">⏳ 加载中...</span>
+                    </button>
+                </div>
+
+                <!-- 推荐结果 -->
+                <div v-if="recommendations.length > 0" class="results fade-in">
+                    <h3>💫 推荐结果 ({{ recommendations.length }}个)</h3>
+                    <div class="result-grid">
+                        <div v-for="(item, index) in recommendations" :key="index" class="result-card hover-lift">
+                            <div class="rank-badge">Top {{ index + 1 }}</div>
+                            <div class="result-content">
+                                <h4>{{ item.name }}</h4>
+                                <div class="result-meta">
+                                    <span v-if="item.category" class="meta-item">
+                                        🏷️ {{ item.category }}
+                                    </span>
+                                    <span v-if="item.score" class="meta-item">
+                                        ⭐ {{ item.score.toFixed(2) }}
+                                    </span>
+                                        <span v-if="item.price && item.price > 0" class="meta-item">
+                                        💰 ¥{{ item.price.toFixed(1) }}
+                                    </span>
+                                    <span v-else-if="item.price === 0" class="meta-item" style="color: #999;">
+                                        💰 暂无价格
+                                    </span>
+                                    <span v-if="item.district" class="meta-item">
+                                        📍 {{ item.district }}
+                                    </span>
+                                </div>
+                                <div v-if="item.llm_reason" class="llm-reason">
+                                    💡 <strong>推荐理由:</strong> {{ item.llm_reason }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RAG智能搜索模块 -->
+            <div v-if="currentView === 'rag'" class="module fade-in">
+                <div class="module-header">
+                    <h2>🔍 RAG语义搜索</h2>
+                    <p class="module-desc">向量检索 + 意图解析 + 多路召回融合</p>
+                </div>
+                
+                <div class="card">
+                    <div class="search-box">
+                        <input v-model="ragForm.query" 
+                               type="text" 
+                               placeholder="试试：附近评分高的川菜馆、朝阳区100元以下的日料..."
+                               @keyup.enter="ragSearch"
+                               class="search-input">
+                        <button @click="ragSearch" class="btn-primary" :disabled="loading">
+                            <span v-if="!loading">🚀 智能搜索</span>
+                            <span v-else class="loading-spinner">⏳ 搜索中...</span>
+                        </button>
+                    </div>
+                    
+                    <!-- 意图解析结果 -->
+                    <div v-if="ragResult && ragResult.intent" class="intent-panel">
+                        <h4>🧠 意图理解</h4>
+                        <div class="intent-tags">
+                            <span v-for="intent in ragResult.intent.intents" :key="intent" class="tag">
+                                {{ intent }}
+                            </span>
+                        </div>
+                        <div v-if="ragResult.intent.filters" class="filters">
+                            <span v-for="(value, key) in ragResult.intent.filters" :key="key" class="filter-tag">
+                                {{ key }}: {{ value }}
+                            </span>
+                        </div>
+                        <div v-if="ragResult.intent.llm_analysis" class="llm-analysis">
+                            💬 {{ ragResult.intent.llm_analysis }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RAG搜索结果 -->
+                <div v-if="ragResult && ragResult.results && ragResult.results.length > 0" class="results fade-in">
+                    <h3>🎯 搜索结果 ({{ ragResult.total }}个)</h3>
+                    <div class="result-grid">
+                        <div v-for="(item, index) in ragResult.results" :key="index" class="result-card hover-lift">
+                            <div class="result-content">
+                                <h4>{{ item.name }}</h4>
+                                <div class="result-meta">
+                                    <span class="meta-item">🏷️ {{ item.category }}</span>
+                                    <span class="meta-item">⭐ {{ item.score.toFixed(2) }}</span>
+                                    <span v-if="item.price && item.price > 0" class="meta-item">
+                                        💰 ¥{{ item.price.toFixed(1) }}
+                                    </span>
+                                    <span v-else class="meta-item" style="color: #999;">
+                                        💰 暂无价格
+                                    </span>
+                                    <span class="meta-item">📍 {{ item.district }}</span>
+                                </div>
+                                <div class="result-sources">
+                                    <small>来源: {{ item.sources.join(', ') }}</small>
+                                    <small v-if="item.rank_score">得分: {{ item.rank_score.toFixed(3) }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent运营分析模块 -->
+            <div v-if="currentView === 'operation'" class="module fade-in">
+                <div class="module-header">
+                    <h2>📊 Agent智能运营分析</h2>
+                    <p class="module-desc">多Agent协作：数据分析 → 竞品分析 → 运营建议 → 报告生成</p>
+                </div>
+                
+                <div class="card">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>商家ID:</label>
+                            <input v-model="operationForm.poi_id" type="text" placeholder="输入商家POI ID">
+                        </div>
+                        <button @click="getOperationAnalysis" class="btn-primary" :disabled="loading">
+                            <span v-if="!loading">🤖 启动Agent分析</span>
+                            <span v-else class="loading-spinner">⏳ Agent工作中...</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 运营分析报告 -->
+                <div v-if="operationReport" class="analysis-report fade-in">
+                    <h3>📋 运营分析报告</h3>
+                    
+                    <!-- 基本信息 -->
+                    <div v-if="operationReport['基本信息']" class="report-section">
+                        <h4>🏪 基本信息</h4>
+                        <div class="info-grid">
+                            <div v-for="(value, key) in operationReport['基本信息']" :key="key" class="info-item">
+                                <strong>{{ key }}:</strong> {{ value }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 经营数据 -->
+                    <div v-if="operationReport['经营数据']" class="report-section">
+                        <h4>💹 经营数据</h4>
+                        <div class="stats-grid">
+                            <div v-for="(value, key) in operationReport['经营数据']" :key="key" class="stat-card">
+                                <div class="stat-value">{{ value }}</div>
+                                <div class="stat-label">{{ key }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 热销菜品 -->
+                    <div v-if="operationReport['热销菜品TOP10']" class="report-section">
+                        <h4>🔥 热销菜品 TOP10</h4>
+                        <div class="hot-items">
+                            <div v-for="(item, index) in operationReport['热销菜品TOP10']" :key="index" class="hot-item">
+                                <span class="item-rank">{{ index + 1 }}</span>
+                                <span class="item-name">{{ item.名称 }}</span>
+                                <span class="item-tag">{{ item.标签 }}</span>
+                                <span class="item-sales">{{ item.销量 }}单</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 用户画像 -->
+                    <div v-if="operationReport['用户画像']" class="report-section">
+                        <h4>👥 用户画像</h4>
+                        <div class="profile-data">
+                            <div v-if="operationReport['用户画像'].gender_distribution">
+                                <strong>性别分布:</strong>
+                                <span v-for="(count, gender) in operationReport['用户画像'].gender_distribution" :key="gender">
+                                    {{ gender }}: {{ count }} |
+                                </span>
+                            </div>
+                            <div v-if="operationReport['用户画像'].age_distribution">
+                                <strong>年龄分布:</strong>
+                                <span v-for="(count, age) in operationReport['用户画像'].age_distribution" :key="age">
+                                    {{ age }}岁: {{ count }} |
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 运营建议 -->
+                    <div v-if="operationReport['运营建议']" class="report-section">
+                        <h4>💡 运营建议</h4>
+                        <div class="suggestions">
+                            <template v-for="(items, category) in operationReport['运营建议']" :key="category">
+                                <div v-if="category !== 'LLM建议'" class="suggestion-category">
+                                    <h5>{{ category }}:</h5>
+                                    <ul>
+                                        <li v-for="(item, idx) in items" :key="idx">{{ item }}</li>
+                                    </ul>
+                                </div>
+                            </template>
+                            <div v-if="operationReport['运营建议']['LLM建议']" class="llm-advice">
+                                <h5>LLM建议:</h5>
+                                <p>{{ operationReport['运营建议']['LLM建议'] }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 评论摘要模块 -->
+            <div v-if="currentView === 'comment'" class="module fade-in">
+                <div class="module-header">
+                    <h2>💬 评论智能摘要</h2>
+                    <p class="module-desc">LLM驱动的评论情感分析与摘要生成</p>
+                </div>
+                
+                <div class="card">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>商家ID:</label>
+                            <input v-model="commentForm.poi_id" type="text" placeholder="输入商家POI ID">
+                        </div>
+                        <button @click="getCommentSummary" class="btn-primary" :disabled="loading">
+                            <span v-if="!loading">📊 生成摘要</span>
+                            <span v-else class="loading-spinner">⏳ 分析中...</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 评论摘要结果 -->
+                <div v-if="commentSummary" class="summary-result fade-in">
+                    <h3>📝 评论摘要 - {{ commentSummary.poi_name }}</h3>
+                    
+                    <div class="summary-stats">
+                        <div class="stat-card">
+                            <div class="stat-value">{{ commentSummary.total_reviews }}</div>
+                            <div class="stat-label">总评论数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">{{ commentSummary.average_score }}</div>
+                            <div class="stat-label">平均评分</div>
+                        </div>
+                    </div>
+
+                    <!-- 情感分布 -->
+                    <div v-if="commentSummary.sentiment" class="sentiment-section">
+                        <h4>😊 情感分布</h4>
+                        <div class="sentiment-bars">
+                            <div class="sentiment-bar">
+                                <span>正面 {{ commentSummary.sentiment.positive }}%</span>
+                                <div class="bar positive" :style="{width: commentSummary.sentiment.positive + '%'}"></div>
+                            </div>
+                            <div class="sentiment-bar">
+                                <span>中性 {{ commentSummary.sentiment.neutral }}%</span>
+                                <div class="bar neutral" :style="{width: commentSummary.sentiment.neutral + '%'}"></div>
+                            </div>
+                            <div class="sentiment-bar">
+                                <span>负面 {{ commentSummary.sentiment.negative }}%</span>
+                                <div class="bar negative" :style="{width: commentSummary.sentiment.negative + '%'}"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 优缺点 -->
+                    <div class="pros-cons">
+                        <div class="pros">
+                            <h4>👍 优点</h4>
+                            <ul>
+                                <li v-for="(item, idx) in commentSummary.positive_aspects" :key="idx">{{ item }}</li>
+                            </ul>
+                        </div>
+                        <div class="cons">
+                            <h4>👎 缺点</h4>
+                            <ul>
+                                <li v-for="(item, idx) in commentSummary.negative_aspects" :key="idx">{{ item }}</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- LLM摘要 -->
+                    <div v-if="commentSummary.llm_summary" class="llm-summary">
+                        <h4>🤖 LLM综合评价</h4>
+                        <p>{{ commentSummary.llm_summary }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 智能问答模块 -->
+            <div v-if="currentView === 'qa'" class="module fade-in">
+                <div class="module-header">
+                    <h2>🤔 RAG智能问答</h2>
+                    <p class="module-desc">基于向量检索的上下文感知问答系统</p>
+                </div>
+                
+                <div class="card">
+                    <div class="qa-input">
+                        <textarea v-model="qaForm.question" 
+                                  placeholder="输入您的问题，例如：&#10;- 推荐一些评分高的川菜馆&#10;- 如何提升商家评分&#10;- 朝阳区有哪些热门日料店"
+                                  rows="3"></textarea>
+                        <button @click="askQuestion" class="btn-primary" :disabled="loading">
+                            <span v-if="!loading">💬 提问</span>
+                            <span v-else class="loading-spinner">⏳ 思考中...</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 问答历史 -->
+                <div v-if="qaHistory.length > 0" class="qa-history fade-in">
+                    <h3>💭 问答记录</h3>
+                    <div v-for="(qa, index) in qaHistory" :key="index" class="qa-pair">
+                        <div class="question">
+                            <strong>🧑 问:</strong> {{ qa.question }}
+                        </div>
+                        <div class="answer">
+                            <strong>🤖 答:</strong> {{ qa.answer }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 平台统计模块 -->
+            <div v-if="currentView === 'stats'" class="module fade-in">
+                <div class="module-header">
+                    <h2>📈 平台统计</h2>
+                    <p class="module-desc">数据总览与向量索引状态</p>
+                </div>
+                
+                <div v-if="stats" class="stats-dashboard">
+                    <div class="stats-grid">
+                        <div class="stat-card big">
+                            <div class="stat-icon">👥</div>
+                            <div class="stat-value">{{ stats.total_users }}</div>
+                            <div class="stat-label">用户总数</div>
+                        </div>
+                        <div class="stat-card big">
+                            <div class="stat-icon">🏪</div>
+                            <div class="stat-value">{{ stats.total_pois }}</div>
+                            <div class="stat-label">商家总数</div>
+                        </div>
+                        <div class="stat-card big">
+                            <div class="stat-icon">🍜</div>
+                            <div class="stat-value">{{ stats.total_spus }}</div>
+                            <div class="stat-label">菜品总数</div>
+                        </div>
+                        <div class="stat-card big">
+                            <div class="stat-icon">📦</div>
+                            <div class="stat-value">{{ stats.total_orders }}</div>
+                            <div class="stat-label">订单总数</div>
+                        </div>
+                    </div>
+
+                    <!-- 向量索引状态 -->
+                    <div v-if="stats.vector_indexed" class="vector-status">
+                        <h3>🔍 向量索引状态</h3>
+                        <div class="vector-stats">
+                            <div class="vector-stat">
+                                <span>商家索引:</span>
+                                <strong>{{ stats.vector_indexed.pois }}</strong>
+                            </div>
+                            <div class="vector-stat">
+                                <span>菜品索引:</span>
+                                <strong>{{ stats.vector_indexed.spus }}</strong>
+                            </div>
+                            <div class="vector-stat">
+                                <span>评论索引:</span>
+                                <strong>{{ stats.vector_indexed.comments }}</strong>
+                            </div>
+                        </div>
+                        <button @click="buildVectorIndex" class="btn-secondary" :disabled="loading">
+                            {{ loading ? '构建中...' : '🔄 重建向量索引' }}
+                        </button>
+                    </div>
+                </div>
+
+                <button @click="loadStats" class="btn-secondary">🔄 刷新统计</button>
+            </div>
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <p>美团外卖推荐与运营分析平台 V2 | 第三阶段：RAG + Agent + 智能功能 🚀</p>
+        </footer>
+    </div>
+
+    <script src="static/js/app_v2.js"></script>
+</body>
+</html>
